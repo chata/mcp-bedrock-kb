@@ -164,7 +164,9 @@ class S3Manager:
     async def upload_file(
         self,
         knowledge_base_id: str,
-        file_path: Path,
+        file_content: str,
+        file_name: str,
+        content_type: str,
         s3_key: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
@@ -172,7 +174,9 @@ class S3Manager:
         
         Args:
             knowledge_base_id: The Knowledge Base ID
-            file_path: Local file path
+            file_content: Base64 encoded file content
+            file_name: Name of the file with extension
+            content_type: MIME type of the file
             s3_key: S3 object key (optional)
             metadata: Document metadata
             
@@ -180,20 +184,27 @@ class S3Manager:
             Upload result
         """
         try:
-            if not file_path.exists():
+            import base64
+            
+            # Decode base64 content
+            try:
+                file_data = base64.b64decode(file_content)
+            except Exception as e:
                 return {
                     "success": False,
-                    "error": f"File not found: {file_path}"
+                    "error": f"Invalid base64 content: {str(e)}"
                 }
             
-            file_size_mb = file_path.stat().st_size / (1024 * 1024)
+            # Check file size
+            file_size_mb = len(file_data) / (1024 * 1024)
             if file_size_mb > self.max_file_size_mb:
                 return {
                     "success": False,
                     "error": f"File size ({file_size_mb:.2f} MB) exceeds limit ({self.max_file_size_mb} MB)"
                 }
             
-            file_extension = file_path.suffix[1:].lower()
+            # Check file extension
+            file_extension = Path(file_name).suffix[1:].lower()
             if file_extension not in self.supported_formats:
                 return {
                     "success": False,
@@ -208,26 +219,21 @@ class S3Manager:
                 }
             
             if not s3_key:
-                s3_key = f"{self.upload_prefix}{file_path.name}"
+                s3_key = f"{self.upload_prefix}{file_name}"
             
-            content_type, _ = mimetypes.guess_type(str(file_path))
-            if not content_type:
-                content_type = "application/octet-stream"
+            put_params = {
+                "Bucket": bucket,
+                "Key": s3_key,
+                "Body": file_data,
+                "ContentType": content_type
+            }
             
-            with open(file_path, "rb") as f:
-                put_params = {
-                    "Bucket": bucket,
-                    "Key": s3_key,
-                    "Body": f,
-                    "ContentType": content_type
+            if metadata:
+                put_params["Metadata"] = {
+                    k: str(v) for k, v in metadata.items()
                 }
-                
-                if metadata:
-                    put_params["Metadata"] = {
-                        k: str(v) for k, v in metadata.items()
-                    }
-                
-                self.s3_client.put_object(**put_params)
+            
+            self.s3_client.put_object(**put_params)
             
             return {
                 "success": True,

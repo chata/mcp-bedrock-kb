@@ -155,20 +155,28 @@ class BedrockKnowledgeBaseMCPServer:
                                 "type": "string",
                                 "description": "The Knowledge Base ID",
                             },
-                            "file_path": {
+                            "file_content": {
                                 "type": "string",
-                                "description": "Local file path to upload",
+                                "description": "Base64 encoded file content",
+                            },
+                            "file_name": {
+                                "type": "string",
+                                "description": "Name of the file with extension",
+                            },
+                            "content_type": {
+                                "type": "string",
+                                "description": "MIME type of the file (e.g., application/pdf, text/plain)",
                             },
                             "s3_key": {
                                 "type": "string",
-                                "description": "S3 object key",
+                                "description": "S3 object key (optional)",
                             },
                             "metadata": {
                                 "type": "object",
                                 "description": "Document metadata",
                             },
                         },
-                        "required": ["knowledge_base_id", "file_path"],
+                        "required": ["knowledge_base_id", "file_content", "file_name", "content_type"],
                     },
                 ),
                 Tool(
@@ -326,10 +334,11 @@ class BedrockKnowledgeBaseMCPServer:
                     return [TextContent(type="text", text=str(result))]
 
                 elif name == "bedrock_kb_upload_file":
-                    file_path = validate_file_path(arguments["file_path"])
                     result = await self.s3_manager.upload_file(
                         knowledge_base_id=arguments["knowledge_base_id"],
-                        file_path=file_path,
+                        file_content=arguments["file_content"],
+                        file_name=arguments["file_name"],
+                        content_type=arguments["content_type"],
                         s3_key=arguments.get("s3_key"),
                         metadata=arguments.get("metadata"),
                     )

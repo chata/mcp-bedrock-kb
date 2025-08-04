@@ -2,7 +2,7 @@
 
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, AsyncMock, patch
 
 import pytest
 from botocore.exceptions import ClientError
@@ -92,7 +92,7 @@ class TestS3Manager:
     @pytest.mark.asyncio
     async def test_upload_document_success(self, s3_manager):
         """Test successful document upload."""
-        s3_manager.get_bucket_for_kb = MagicMock(return_value="test-bucket")
+        s3_manager.get_bucket_for_kb = AsyncMock(return_value="test-bucket")
         s3_manager.s3_client.put_object = MagicMock()
         
         result = await s3_manager.upload_document(
@@ -113,7 +113,7 @@ class TestS3Manager:
     @pytest.mark.asyncio
     async def test_upload_document_invalid_format(self, s3_manager):
         """Test document upload with invalid format."""
-        s3_manager.get_bucket_for_kb = MagicMock(return_value="test-bucket")
+        s3_manager.get_bucket_for_kb = AsyncMock(return_value="test-bucket")
         
         result = await s3_manager.upload_document(
             knowledge_base_id="KB123",
@@ -127,54 +127,95 @@ class TestS3Manager:
 
     @pytest.mark.asyncio
     async def test_upload_file_success(self, s3_manager):
-        """Test successful file upload."""
-        with tempfile.NamedTemporaryFile(suffix=".txt", mode="w") as f:
-            f.write("Test file content")
-            f.flush()
-            
-            s3_manager.get_bucket_for_kb = MagicMock(return_value="test-bucket")
-            s3_manager.s3_client.put_object = MagicMock()
-            
-            result = await s3_manager.upload_file(
-                knowledge_base_id="KB123",
-                file_path=Path(f.name),
-                metadata={"type": "test"}
-            )
-            
-            assert result["success"] is True
-            assert result["bucket"] == "test-bucket"
-            assert "message" in result
-
-    @pytest.mark.asyncio
-    async def test_upload_file_not_found(self, s3_manager):
-        """Test file upload with nonexistent file."""
+        """Test successful file upload with base64 content."""
+        import base64
+        from unittest.mock import AsyncMock
+        
+        test_content = "Test file content"
+        file_content_b64 = base64.b64encode(test_content.encode()).decode()
+        
+        s3_manager.get_bucket_for_kb = AsyncMock(return_value="test-bucket")
+        s3_manager.s3_client.put_object = MagicMock()
+        
         result = await s3_manager.upload_file(
             knowledge_base_id="KB123",
-            file_path=Path("/nonexistent/file.txt")
+            file_content=file_content_b64,
+            file_name="test.txt",
+            content_type="text/plain",
+            metadata={"type": "test"}
+        )
+        
+        assert result["success"] is True
+        assert result["bucket"] == "test-bucket"
+        assert result["key"] == "documents/test.txt"
+        assert result["content_type"] == "text/plain"
+        assert "message" in result
+        
+        # Verify S3 put_object was called with decoded content
+        s3_manager.s3_client.put_object.assert_called_once()
+        call_args = s3_manager.s3_client.put_object.call_args[1]
+        assert call_args["Body"] == test_content.encode()
+
+    @pytest.mark.asyncio
+    async def test_upload_file_invalid_base64(self, s3_manager):
+        """Test file upload with invalid base64 content."""
+        result = await s3_manager.upload_file(
+            knowledge_base_id="KB123",
+            file_content="invalid-base64!@#",
+            file_name="test.txt",
+            content_type="text/plain"
         )
         
         assert result["success"] is False
-        assert "File not found" in result["error"]
+        assert "Invalid base64 content" in result["error"]
 
     @pytest.mark.asyncio
     async def test_upload_file_size_limit(self, s3_manager):
         """Test file upload exceeding size limit."""
-        with tempfile.NamedTemporaryFile(suffix=".txt") as f:
-            f.write(b"x" * (51 * 1024 * 1024))
-            f.flush()
-            
-            result = await s3_manager.upload_file(
-                knowledge_base_id="KB123",
-                file_path=Path(f.name)
-            )
-            
-            assert result["success"] is False
-            assert "exceeds limit" in result["error"]
+        import base64
+        from unittest.mock import AsyncMock
+        
+        # Create content that exceeds 50MB limit when decoded
+        large_content = "x" * (51 * 1024 * 1024)
+        file_content_b64 = base64.b64encode(large_content.encode()).decode()
+        
+        s3_manager.get_bucket_for_kb = AsyncMock(return_value="test-bucket")
+        
+        result = await s3_manager.upload_file(
+            knowledge_base_id="KB123",
+            file_content=file_content_b64,
+            file_name="large.txt",
+            content_type="text/plain"
+        )
+        
+        assert result["success"] is False
+        assert "exceeds limit" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_upload_file_unsupported_format(self, s3_manager):
+        """Test file upload with unsupported format."""
+        import base64
+        from unittest.mock import AsyncMock
+        
+        test_content = "Test content"
+        file_content_b64 = base64.b64encode(test_content.encode()).decode()
+        
+        s3_manager.get_bucket_for_kb = AsyncMock(return_value="test-bucket")
+        
+        result = await s3_manager.upload_file(
+            knowledge_base_id="KB123",
+            file_content=file_content_b64,
+            file_name="test.exe",
+            content_type="application/octet-stream"
+        )
+        
+        assert result["success"] is False
+        assert "Unsupported file format" in result["error"]
 
     @pytest.mark.asyncio
     async def test_update_document_success(self, s3_manager):
         """Test successful document update."""
-        s3_manager.get_bucket_for_kb = MagicMock(return_value="test-bucket")
+        s3_manager.get_bucket_for_kb = AsyncMock(return_value="test-bucket")
         s3_manager.s3_client.head_object = MagicMock(
             return_value={
                 "Metadata": {"existing": "metadata"},
@@ -198,7 +239,7 @@ class TestS3Manager:
     @pytest.mark.asyncio
     async def test_update_document_not_found(self, s3_manager):
         """Test updating nonexistent document."""
-        s3_manager.get_bucket_for_kb = MagicMock(return_value="test-bucket")
+        s3_manager.get_bucket_for_kb = AsyncMock(return_value="test-bucket")
         s3_manager.s3_client.head_object = MagicMock(
             side_effect=ClientError(
                 {"Error": {"Code": "404"}},
@@ -218,7 +259,7 @@ class TestS3Manager:
     @pytest.mark.asyncio
     async def test_delete_document_success(self, s3_manager):
         """Test successful document deletion."""
-        s3_manager.get_bucket_for_kb = MagicMock(return_value="test-bucket")
+        s3_manager.get_bucket_for_kb = AsyncMock(return_value="test-bucket")
         s3_manager.s3_client.head_object = MagicMock()
         s3_manager.s3_client.delete_object = MagicMock()
         
@@ -234,7 +275,7 @@ class TestS3Manager:
     @pytest.mark.asyncio
     async def test_list_documents(self, s3_manager):
         """Test listing documents in S3."""
-        s3_manager.get_bucket_for_kb = MagicMock(return_value="test-bucket")
+        s3_manager.get_bucket_for_kb = AsyncMock(return_value="test-bucket")
         s3_manager.s3_client.list_objects_v2 = MagicMock(
             return_value={
                 "Contents": [
