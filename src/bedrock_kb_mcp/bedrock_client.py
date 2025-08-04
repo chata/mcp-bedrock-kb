@@ -112,7 +112,6 @@ class BedrockClient:
         """
         try:
             request_params = {
-                "knowledgeBaseId": knowledge_base_id,
                 "retrieveAndGenerateConfiguration": {
                     "type": "KNOWLEDGE_BASE",
                     "knowledgeBaseConfiguration": {
