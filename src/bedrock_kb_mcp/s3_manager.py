@@ -394,4 +394,3 @@ class S3Manager:
         except ClientError as e:
             logger.error(f"Error listing documents: {e}")
             return []
-

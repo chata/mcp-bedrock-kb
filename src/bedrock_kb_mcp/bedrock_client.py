@@ -346,4 +346,3 @@ class BedrockClient:
         except ClientError as e:
             logger.error(f"Error getting ingestion job status: {e}")
             return {"error": str(e)}
-

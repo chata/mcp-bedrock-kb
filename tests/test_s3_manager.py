@@ -286,4 +286,3 @@ class TestS3Manager:
         assert result[0]["key"] == "documents/file1.txt"
         assert result[0]["size"] == 1024
         assert result[1]["key"] == "documents/file2.pdf"
-
