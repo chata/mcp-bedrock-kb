@@ -1,0 +1,96 @@
+# Bedrock Knowledge Base MCP Server Configuration
+
+# AWS Configuration
+aws:
+  # AWS region where your Bedrock Knowledge Base is located
+  region: us-east-1
+  
+  # AWS SSO profile name (recommended for local development)
+  # Set to null to use other authentication methods
+  profile: null
+  
+  # Whether to use IAM role credentials (useful for EC2/Lambda)
+  use_iam_role: true
+
+# Bedrock Configuration
+bedrock:
+  # Default Foundation Model ARN for RAG queries
+  # You can override this per query if needed
+  default_model: "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0"
+  
+  # Default Knowledge Base ID (optional)
+  # If set, this will be used when no knowledge_base_id is provided
+  default_kb_id: null
+
+# S3 Configuration
+s3:
+  # Default S3 bucket for document uploads
+  # If null, will attempt to auto-detect from Knowledge Base configuration
+  default_bucket: null
+  
+  # Default prefix for uploaded documents
+  upload_prefix: "documents/"
+
+# Document Processing Configuration
+document_processing:
+  # Supported file formats for upload
+  supported_formats:
+    - "txt"
+    - "md" 
+    - "html"
+    - "pdf"
+    - "docx"
+  
+  # Maximum file size in MB
+  max_file_size_mb: 50
+  
+  # Text encoding for text files
+  encoding: "utf-8"
+
+# Logging Configuration
+logging:
+  # Log level: DEBUG, INFO, WARNING, ERROR, CRITICAL
+  level: INFO
+  
+  # Log format
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  
+  # Log file path (null for console output only)
+  file: null
+
+# MCP Server Configuration
+mcp:
+  # Server identification
+  server_name: "bedrock-knowledge-base"
+  version: "1.0.0"
+  description: "Bedrock Knowledge Base MCP Server with CRUD operations"
+
+# Example configurations for different environments:
+
+# Development Environment Example:
+# aws:
+#   region: us-east-1
+#   profile: "dev-sso-profile"
+#   use_iam_role: false
+# logging:
+#   level: DEBUG
+#   file: "/tmp/bedrock-kb-mcp.log"
+
+# Production Environment Example:
+# aws:
+#   region: us-east-1
+#   profile: null
+#   use_iam_role: true
+# bedrock:
+#   default_kb_id: "KB123456789ABCD"
+# s3:
+#   default_bucket: "my-knowledge-base-bucket"
+# logging:
+#   level: WARNING
+#   file: "/var/log/bedrock-kb-mcp.log"
+
+# Multi-region Example:
+# aws:
+#   region: eu-west-1
+# bedrock:
+#   default_model: "arn:aws:bedrock:eu-west-1::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0"
