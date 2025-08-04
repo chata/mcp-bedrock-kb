@@ -23,12 +23,22 @@ An MCP (Model Context Protocol) server for Amazon Bedrock Knowledge Base with fu
 - AWS Account with Bedrock Knowledge Base configured
 - Appropriate IAM permissions (see below)
 
+### Quick Install with uvx (Recommended)
+
+```bash
+# Install and run directly from GitHub
+uvx --from git+https://github.com/chata/mcp-bedrock-kb.git bedrock-kb-mcp
+
+# Or install to use repeatedly
+uvx --from git+https://github.com/chata/mcp-bedrock-kb.git --spec bedrock-kb-mcp bedrock-kb-mcp
+```
+
 ### Install from source
 
 ```bash
 # Clone the repository
-git clone https://github.com/chata/mcp-development-knowledge.git
-cd mcp-development-knowledge
+git clone https://github.com/chata/mcp-bedrock-kb.git
+cd mcp-bedrock-kb
 
 # Install dependencies (Python 3.10+ required)
 python3.13 -m pip install -e .
@@ -36,10 +46,10 @@ python3.13 -m pip install -e .
 pip install -e .
 ```
 
-### Install via pip (when published)
+### Install via pip
 
 ```bash
-pip install bedrock-kb-mcp
+pip install git+https://github.com/chata/mcp-bedrock-kb.git
 ```
 
 ## Configuration
