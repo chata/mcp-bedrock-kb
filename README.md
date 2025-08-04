@@ -168,7 +168,48 @@ export LOG_LEVEL=DEBUG
 
 ### Claude Desktop Configuration
 
+#### Option 1: Using uvx (Recommended)
+
 Add to your Claude Desktop configuration (`claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "bedrock-kb": {
+      "command": "uvx",
+      "args": [
+        "--from", 
+        "git+https://github.com/chata/mcp-bedrock-kb.git",
+        "bedrock-kb-mcp"
+      ],
+      "env": {
+        "AWS_REGION": "us-east-1",
+        "BEDROCK_DEFAULT_KB_ID": "your-kb-id"
+      }
+    }
+  }
+}
+```
+
+#### Option 2: Using installed package
+
+If you've already installed the package:
+
+```json
+{
+  "mcpServers": {
+    "bedrock-kb": {
+      "command": "bedrock-kb-mcp",
+      "env": {
+        "AWS_REGION": "us-east-1",
+        "BEDROCK_DEFAULT_KB_ID": "your-kb-id"
+      }
+    }
+  }
+}
+```
+
+#### Option 3: Using Python module
 
 ```json
 {
