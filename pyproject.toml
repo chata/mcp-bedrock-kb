@@ -2,12 +2,12 @@
 name = "bedrock-kb-mcp"
 version = "1.0.0"
 description = "MCP server for Amazon Bedrock Knowledge Base with CRUD operations"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "Bedrock KB MCP Development Team" }]
 
 dependencies = [
-    "mcp>=1.0.0",
+    "mcp>=1.12.0",
     "boto3>=1.35.0",
     "pyyaml>=6.0.1",
     "aiofiles>=24.1.0",
