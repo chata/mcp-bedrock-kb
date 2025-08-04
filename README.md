@@ -19,7 +19,7 @@ An MCP (Model Context Protocol) server for Amazon Bedrock Knowledge Base with fu
 ## Installation
 
 ### Prerequisites
-- Python 3.11 or higher
+- Python 3.10 or higher (3.13 recommended)
 - AWS Account with Bedrock Knowledge Base configured
 - Appropriate IAM permissions (see below)
 
@@ -27,10 +27,12 @@ An MCP (Model Context Protocol) server for Amazon Bedrock Knowledge Base with fu
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/bedrock-kb-mcp.git
-cd bedrock-kb-mcp
+git clone https://github.com/chata/mcp-development-knowledge.git
+cd mcp-development-knowledge
 
-# Install dependencies
+# Install dependencies (Python 3.10+ required)
+python3.13 -m pip install -e .
+# or with your preferred Python version
 pip install -e .
 ```
 
