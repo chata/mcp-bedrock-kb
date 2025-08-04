@@ -3,19 +3,17 @@
 
 import asyncio
 import logging
-import sys
-from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from mcp.server import Server
 from mcp.server.models import InitializationOptions, ServerCapabilities
-from mcp.types import Tool, TextContent, ToolsCapability
+from mcp.types import TextContent, Tool, ToolsCapability
 
 from .auth_manager import AuthManager
 from .bedrock_client import BedrockClient
 from .config_manager import ConfigManager
 from .s3_manager import S3Manager
-from .utils import validate_file_path, format_error_response
+from .utils import format_error_response
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -29,15 +27,15 @@ class BedrockKnowledgeBaseMCPServer:
         self.server = Server("bedrock-knowledge-base")
         self.config = ConfigManager()
         self.auth_manager = AuthManager(self.config)
-        self.bedrock_client: Optional[BedrockClient] = None
-        self.s3_manager: Optional[S3Manager] = None
+        self.bedrock_client: BedrockClient | None = None
+        self.s3_manager: S3Manager | None = None
         self._setup_handlers()
 
     def _setup_handlers(self):
         """Set up MCP server handlers."""
-        
+
         @self.server.list_tools()
-        async def list_tools() -> List[Tool]:
+        async def list_tools() -> list[Tool]:
             """List all available tools."""
             return [
                 Tool(
@@ -176,7 +174,12 @@ class BedrockKnowledgeBaseMCPServer:
                                 "description": "Document metadata",
                             },
                         },
-                        "required": ["knowledge_base_id", "file_content", "file_name", "content_type"],
+                        "required": [
+                            "knowledge_base_id",
+                            "file_content",
+                            "file_name",
+                            "content_type",
+                        ],
                     },
                 ),
                 Tool(
@@ -293,7 +296,7 @@ class BedrockKnowledgeBaseMCPServer:
             ]
 
         @self.server.call_tool()
-        async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
+        async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             """Handle tool calls."""
             try:
                 if self.bedrock_client is None or self.s3_manager is None:
@@ -408,9 +411,7 @@ class BedrockKnowledgeBaseMCPServer:
                 InitializationOptions(
                     server_name="bedrock-knowledge-base",
                     server_version="1.0.0",
-                    capabilities=ServerCapabilities(
-                        tools=ToolsCapability(listChanged=True)
-                    ),
+                    capabilities=ServerCapabilities(tools=ToolsCapability(listChanged=True)),
                 ),
             )
 
@@ -423,3 +424,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

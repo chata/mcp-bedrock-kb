@@ -2,7 +2,7 @@
 
 import logging
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import boto3
 from botocore.exceptions import ClientError, NoCredentialsError
@@ -15,7 +15,7 @@ class AuthManager:
 
     def __init__(self, config: Any):
         """Initialize authentication manager.
-        
+
         Args:
             config: Configuration manager instance
         """
@@ -23,14 +23,14 @@ class AuthManager:
         self.region = config.get("aws.region", "us-east-1")
         self.profile = config.get("aws.profile")
         self.use_iam_role = config.get("aws.use_iam_role", True)
-        self._session: Optional[boto3.Session] = None
+        self._session: boto3.Session | None = None
 
     async def get_session(self) -> boto3.Session:
         """Get or create an AWS session.
-        
+
         Returns:
             boto3.Session: Authenticated AWS session
-            
+
         Raises:
             NoCredentialsError: If no valid credentials are found
         """
@@ -48,15 +48,15 @@ class AuthManager:
 
     async def _create_session(self) -> boto3.Session:
         """Create a new AWS session.
-        
+
         Returns:
             boto3.Session: New authenticated AWS session
-            
+
         Raises:
             NoCredentialsError: If no valid credentials are found
         """
         session_params = {"region_name": self.region}
-        
+
         if self.profile:
             logger.info(f"Using AWS profile: {self.profile}")
             session_params["profile_name"] = self.profile
@@ -68,13 +68,13 @@ class AuthManager:
                 logger.warning(f"Failed to use profile {self.profile}: {e}")
                 if not self.use_iam_role:
                     raise
-        
+
         if os.environ.get("AWS_ACCESS_KEY_ID") and os.environ.get("AWS_SECRET_ACCESS_KEY"):
             logger.info("Using AWS credentials from environment variables")
             session = boto3.Session(**session_params)
             self._validate_session(session)
             return session
-        
+
         if self.use_iam_role:
             logger.info("Attempting to use IAM role credentials")
             session = boto3.Session(**session_params)
@@ -85,7 +85,7 @@ class AuthManager:
             except NoCredentialsError:
                 logger.error("No IAM role credentials available")
                 raise
-        
+
         raise NoCredentialsError(
             "No valid AWS credentials found. Please configure AWS credentials via:\n"
             "1. AWS SSO profile in config\n"
@@ -95,10 +95,10 @@ class AuthManager:
 
     def _validate_session(self, session: boto3.Session):
         """Validate that a session has valid credentials.
-        
+
         Args:
             session: boto3 session to validate
-            
+
         Raises:
             NoCredentialsError: If credentials are invalid
         """
@@ -113,9 +113,9 @@ class AuthManager:
                 raise NoCredentialsError("Invalid AWS credentials")
             raise
 
-    async def get_account_id(self) -> Optional[str]:
+    async def get_account_id(self) -> str | None:
         """Get the AWS account ID.
-        
+
         Returns:
             AWS account ID or None
         """
@@ -128,9 +128,9 @@ class AuthManager:
             logger.error(f"Failed to get account ID: {e}")
             return None
 
-    async def get_caller_identity(self) -> Dict[str, str]:
+    async def get_caller_identity(self) -> dict[str, str]:
         """Get the caller identity information.
-        
+
         Returns:
             Caller identity information
         """
@@ -142,21 +142,21 @@ class AuthManager:
             logger.error(f"Failed to get caller identity: {e}")
             return {}
 
-    async def check_permissions(self, required_actions: List[str]) -> Dict[str, bool]:
+    async def check_permissions(self, required_actions: list[str]) -> dict[str, bool]:
         """Check if the current credentials have specific permissions.
-        
+
         Args:
             required_actions: List of IAM actions to check
-            
+
         Returns:
             Dictionary mapping actions to permission status
         """
         results = {}
         session = await self.get_session()
-        
+
         for action in required_actions:
             service, operation = action.split(":", 1)
-            
+
             try:
                 if service == "bedrock":
                     client = session.client("bedrock-agent", region_name=self.region)
@@ -174,13 +174,16 @@ class AuthManager:
                 else:
                     results[action] = False
             except ClientError as e:
-                if e.response["Error"]["Code"] in ["AccessDeniedException", "UnauthorizedOperation"]:
+                if e.response["Error"]["Code"] in [
+                    "AccessDeniedException",
+                    "UnauthorizedOperation",
+                ]:
                     results[action] = False
                 else:
                     results[action] = True
             except Exception:
                 results[action] = False
-        
+
         return results
 
     async def refresh_credentials(self):
