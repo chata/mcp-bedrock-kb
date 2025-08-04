@@ -8,8 +8,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from mcp.server import Server
-from mcp.server.models import InitializationOptions
-from mcp.types import Tool, TextContent
+from mcp.server.models import InitializationOptions, ServerCapabilities
+from mcp.types import Tool, TextContent, ToolsCapability
 
 from .auth_manager import AuthManager
 from .bedrock_client import BedrockClient
@@ -399,6 +399,9 @@ class BedrockKnowledgeBaseMCPServer:
                 InitializationOptions(
                     server_name="bedrock-knowledge-base",
                     server_version="1.0.0",
+                    capabilities=ServerCapabilities(
+                        tools=ToolsCapability(listChanged=True)
+                    ),
                 ),
             )
 
