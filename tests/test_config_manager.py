@@ -62,6 +62,21 @@ class TestConfigManager:
 
     def test_load_from_environment(self):
         """Test loading configuration from environment variables."""
+        # Save current environment
+        saved_env = {}
+        env_vars = [
+            "AWS_REGION",
+            "AWS_DEFAULT_REGION",
+            "AWS_PROFILE",
+            "S3_DEFAULT_BUCKET",
+            "DOC_MAX_FILE_SIZE_MB",
+            "AWS_USE_IAM_ROLE",
+        ]
+        for var in env_vars:
+            if var in os.environ:
+                saved_env[var] = os.environ[var]
+                del os.environ[var]
+
         os.environ["AWS_REGION"] = "ap-northeast-1"
         os.environ["S3_DEFAULT_BUCKET"] = "env-bucket"
         os.environ["DOC_MAX_FILE_SIZE_MB"] = "100"
@@ -75,10 +90,13 @@ class TestConfigManager:
             assert config.get("document_processing.max_file_size_mb") == 100
             assert config.get("aws.use_iam_role") is False
         finally:
-            del os.environ["AWS_REGION"]
-            del os.environ["S3_DEFAULT_BUCKET"]
-            del os.environ["DOC_MAX_FILE_SIZE_MB"]
-            del os.environ["AWS_USE_IAM_ROLE"]
+            # Clean up
+            for var in env_vars:
+                if var in os.environ:
+                    del os.environ[var]
+            # Restore saved environment
+            for var, value in saved_env.items():
+                os.environ[var] = value
 
     def test_save_to_file(self):
         """Test saving configuration to file."""
@@ -144,3 +162,22 @@ class TestConfigManager:
         assert config._parse_env_value("45.67") == 45.67
         assert config._parse_env_value("text") == "text"
         assert config._parse_env_value("[a,b,c]") == ["a", "b", "c"]
+
+    def test_aws_default_region_fallback(self):
+        """Test AWS_DEFAULT_REGION as fallback for AWS_REGION."""
+        # Test 1: Only AWS_DEFAULT_REGION set
+        os.environ["AWS_DEFAULT_REGION"] = "eu-central-1"
+        config = ConfigManager()
+        assert config.get("aws.region") == "eu-central-1"
+
+        # Test 2: AWS_REGION overrides AWS_DEFAULT_REGION
+        os.environ["AWS_REGION"] = "us-west-2"
+        config2 = ConfigManager()
+        assert config2.get("aws.region") == "us-west-2"
+
+    def test_aws_profile_from_environment(self):
+        """Test AWS_PROFILE loading from environment."""
+        # Set AWS_PROFILE
+        os.environ["AWS_PROFILE"] = "test-profile"
+        config = ConfigManager()
+        assert config.get("aws.profile") == "test-profile"
