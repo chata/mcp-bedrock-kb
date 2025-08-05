@@ -110,15 +110,58 @@ logging:
 
 ### Environment Variables
 
-You can override configuration via environment variables:
+You can override configuration via environment variables. Environment variables take precedence over configuration files but are overridden by explicit configuration settings.
+
+#### AWS Configuration Variables
 
 ```bash
-export AWS_REGION=us-west-2
-export BEDROCK_DEFAULT_KB_ID=KB123456789
-export S3_DEFAULT_BUCKET=my-kb-bucket
-export DOC_MAX_FILE_SIZE_MB=100
-export LOG_LEVEL=DEBUG
+# AWS Authentication
+export AWS_PROFILE=your-sso-profile              # AWS SSO profile to use
+export AWS_REGION=us-east-1                      # Primary AWS region setting
+export AWS_DEFAULT_REGION=us-west-2              # Fallback region if AWS_REGION not set
+export AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE    # Access key for programmatic access
+export AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI...    # Secret key for programmatic access
+export AWS_SESSION_TOKEN=AQoEXAMPLEH4aoAH0g...   # Session token for temporary credentials
+export AWS_USE_IAM_ROLE=true                     # Use IAM role instead of credentials
 ```
+
+#### Bedrock Configuration Variables
+
+```bash
+export BEDROCK_DEFAULT_MODEL="arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0"
+export BEDROCK_DEFAULT_KB_ID=KB123456789         # Default Knowledge Base ID
+```
+
+#### S3 Configuration Variables
+
+```bash
+export S3_DEFAULT_BUCKET=my-kb-bucket            # Default S3 bucket for documents
+export S3_UPLOAD_PREFIX=documents/               # Prefix for uploaded documents
+```
+
+#### Document Processing Variables
+
+```bash
+export DOC_MAX_FILE_SIZE_MB=50                   # Maximum file size in MB
+export DOC_ENCODING=utf-8                        # Default text encoding
+```
+
+#### Logging Configuration Variables
+
+```bash
+export LOG_LEVEL=INFO                            # Logging level (DEBUG, INFO, WARNING, ERROR)
+export LOG_FILE=/path/to/logfile.log             # Log to file instead of console
+```
+
+#### Variable Priority
+
+The configuration system uses the following priority order (highest to lowest):
+
+1. **Explicit configuration values** (set via config file or direct API calls)
+2. **Environment variables** (listed above)  
+3. **Default values** (built-in defaults)
+
+For AWS regions specifically: `AWS_REGION` > `AWS_DEFAULT_REGION` > default (`us-east-1`)
 
 ## Required IAM Permissions
 
