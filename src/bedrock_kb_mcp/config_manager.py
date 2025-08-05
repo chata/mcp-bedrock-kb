@@ -43,7 +43,10 @@ class ConfigManager:
         Args:
             config_path: Path to configuration file (optional)
         """
-        self.config = self.DEFAULT_CONFIG.copy()
+        # Deep copy to avoid modifying the class-level DEFAULT_CONFIG
+        import copy
+
+        self.config = copy.deepcopy(self.DEFAULT_CONFIG)
         self.config_path = config_path
 
         if config_path:
@@ -78,6 +81,7 @@ class ConfigManager:
         """Load configuration from environment variables."""
         env_mapping = {
             "AWS_REGION": ("aws", "region"),
+            "AWS_DEFAULT_REGION": ("aws", "region"),  # Fallback if AWS_REGION not set
             "AWS_PROFILE": ("aws", "profile"),
             "AWS_USE_IAM_ROLE": ("aws", "use_iam_role"),
             "BEDROCK_DEFAULT_MODEL": ("bedrock", "default_model"),
@@ -90,11 +94,22 @@ class ConfigManager:
             "LOG_FILE": ("logging", "file"),
         }
 
+        # Process AWS_DEFAULT_REGION first, then AWS_REGION (which takes precedence)
+        for env_var in ["AWS_DEFAULT_REGION", "AWS_REGION"]:
+            if env_var in env_mapping:
+                value = os.environ.get(env_var)
+                if value is not None:
+                    config_path = env_mapping[env_var]
+                    self._set_nested(self.config, config_path, self._parse_env_value(value))
+                    logger.debug(f"Set {'.'.join(config_path)} from environment variable {env_var}")
+
+        # Process other environment variables
         for env_var, config_path in env_mapping.items():
-            value = os.environ.get(env_var)
-            if value is not None:
-                self._set_nested(self.config, config_path, self._parse_env_value(value))
-                logger.debug(f"Set {'.'.join(config_path)} from environment variable {env_var}")
+            if env_var not in ["AWS_DEFAULT_REGION", "AWS_REGION"]:
+                value = os.environ.get(env_var)
+                if value is not None:
+                    self._set_nested(self.config, config_path, self._parse_env_value(value))
+                    logger.debug(f"Set {'.'.join(config_path)} from environment variable {env_var}")
 
     def get(self, key: str, default: Any = None) -> Any:
         """Get a configuration value using dot notation.
