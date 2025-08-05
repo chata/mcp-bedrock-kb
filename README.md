@@ -1,4 +1,4 @@
-# AWS Bedrock Knowledge Base MCP Server
+# Amazon Bedrock Knowledge Base MCP Server
 
 An MCP (Model Context Protocol) server for Amazon Bedrock Knowledge Base with full CRUD operations support. This server enables AI assistants to interact with Bedrock Knowledge Bases for searching, querying, and managing documents.
 
