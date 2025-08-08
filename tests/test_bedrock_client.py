@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Tests for BedrockClient."""
 
 from unittest.mock import MagicMock

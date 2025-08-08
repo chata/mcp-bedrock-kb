@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 #!/usr/bin/env python3
 """MCP Server for Amazon Bedrock Knowledge Base with CRUD operations."""
 
@@ -5,9 +7,53 @@ import asyncio
 import logging
 from typing import Any
 
-from mcp.server import Server
-from mcp.server.models import InitializationOptions, ServerCapabilities
-from mcp.types import TextContent, Tool, ToolsCapability
+# Optional import for mcp; provide fallbacks for tests without mcp installed
+try:
+    from mcp.server import Server
+    from mcp.server.models import InitializationOptions, ServerCapabilities
+    from mcp.types import TextContent, Tool, ToolsCapability
+except ImportError:  # Provide minimal shims for typing and test imports
+
+    class Server:  # type: ignore
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def list_tools(self):
+            def decorator(func):
+                return func
+
+            return decorator
+
+        def call_tool(self):
+            def decorator(func):
+                return func
+
+            return decorator
+
+        async def run(self, *args, **kwargs):
+            raise RuntimeError("MCP runtime is not available in this environment")
+
+    class InitializationOptions:  # type: ignore
+        def __init__(self, *args, **kwargs):
+            pass
+
+    class ServerCapabilities:  # type: ignore
+        def __init__(self, *args, **kwargs):
+            pass
+
+    class ToolsCapability:  # type: ignore
+        def __init__(self, *args, **kwargs):
+            pass
+
+    class TextContent:  # type: ignore
+        def __init__(self, type: str, text: str):
+            self.type = type
+            self.text = text
+
+    class Tool:  # type: ignore
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
 
 from .auth_manager import AuthManager
 from .bedrock_client import BedrockClient
@@ -29,10 +75,20 @@ class BedrockKnowledgeBaseMCPServer:
         self.auth_manager = AuthManager(self.config)
         self.bedrock_client: BedrockClient | None = None
         self.s3_manager: S3Manager | None = None
+        self.gdpr_manager = None
         self._setup_handlers()
 
     def _setup_handlers(self):
         """Set up MCP server handlers."""
+
+        # Import at module level as attribute for test patching
+        try:
+            from security.gdpr_deletion import GDPRDeletionManager as _GDPRDeletionManager
+        except Exception:
+            _GDPRDeletionManager = None  # type: ignore
+        # Expose for tests to patch
+        global GDPRDeletionManager  # type: ignore
+        GDPRDeletionManager = _GDPRDeletionManager  # type: ignore
 
         @self.server.list_tools()
         async def list_tools() -> list[Tool]:
@@ -293,6 +349,58 @@ class BedrockKnowledgeBaseMCPServer:
                         "required": ["knowledge_base_id", "data_source_id"],
                     },
                 ),
+                Tool(
+                    name="bedrock_kb_gdpr_deletion_request",
+                    description="Create a GDPR deletion request for personal data",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "subject_identifiers": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "List of PII identifiers to delete (emails, phone numbers, etc.)",
+                            },
+                            "knowledge_base_ids": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Knowledge Base IDs to process for deletion",
+                            },
+                            "request_id": {
+                                "type": "string",
+                                "description": "Optional custom request ID",
+                            },
+                        },
+                        "required": ["subject_identifiers", "knowledge_base_ids"],
+                    },
+                ),
+                Tool(
+                    name="bedrock_kb_gdpr_execute_deletion",
+                    description="Execute a GDPR deletion request",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "request_id": {
+                                "type": "string",
+                                "description": "GDPR deletion request ID to execute",
+                            },
+                        },
+                        "required": ["request_id"],
+                    },
+                ),
+                Tool(
+                    name="bedrock_kb_gdpr_deletion_status",
+                    description="Check the status of a GDPR deletion request",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "request_id": {
+                                "type": "string",
+                                "description": "GDPR deletion request ID to check",
+                            },
+                        },
+                        "required": ["request_id"],
+                    },
+                ),
             ]
 
         @self.server.call_tool()
@@ -386,6 +494,53 @@ class BedrockKnowledgeBaseMCPServer:
                         job_id=arguments.get("job_id"),
                     )
                     return [TextContent(type="text", text=str(result))]
+
+                # GDPR related tools
+                elif name == "bedrock_kb_gdpr_deletion_request":
+                    if self.gdpr_manager is None:
+                        if GDPRDeletionManager is None:
+                            return [TextContent(type="text", text="GDPR functionality unavailable")]
+                        session = await self.auth_manager.get_session()
+                        self.gdpr_manager = GDPRDeletionManager(session, self.config)
+
+                    request_id = await self.gdpr_manager.create_deletion_request(
+                        subject_identifiers=arguments["subject_identifiers"],
+                        knowledge_base_ids=arguments["knowledge_base_ids"],
+                        request_id=arguments.get("request_id"),
+                    )
+                    return [
+                        TextContent(
+                            type="text", text=f"GDPR deletion request created: {request_id}"
+                        )
+                    ]
+
+                elif name == "bedrock_kb_gdpr_execute_deletion":
+                    if self.gdpr_manager is None:
+                        if GDPRDeletionManager is None:
+                            return [TextContent(type="text", text="GDPR functionality unavailable")]
+                        session = await self.auth_manager.get_session()
+                        self.gdpr_manager = GDPRDeletionManager(session, self.config)
+
+                    result = await self.gdpr_manager.execute_deletion(arguments["request_id"])
+                    return [TextContent(type="text", text=str(result))]
+
+                elif name == "bedrock_kb_gdpr_deletion_status":
+                    if self.gdpr_manager is None:
+                        if GDPRDeletionManager is None:
+                            return [TextContent(type="text", text="GDPR functionality unavailable")]
+                        session = await self.auth_manager.get_session()
+                        self.gdpr_manager = GDPRDeletionManager(session, self.config)
+
+                    status = self.gdpr_manager.get_deletion_status(arguments["request_id"])
+                    if status:
+                        return [TextContent(type="text", text=str(status))]
+                    else:
+                        return [
+                            TextContent(
+                                type="text",
+                                text=f"Deletion request {arguments['request_id']} not found",
+                            )
+                        ]
 
                 else:
                     return [TextContent(type="text", text=f"Unknown tool: {name}")]

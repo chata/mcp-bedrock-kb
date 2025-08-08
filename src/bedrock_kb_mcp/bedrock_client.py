@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Bedrock API client for Knowledge Base operations."""
 
 import logging

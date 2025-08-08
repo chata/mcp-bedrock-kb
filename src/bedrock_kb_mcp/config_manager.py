@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Configuration manager for Bedrock Knowledge Base MCP server."""
 
 import logging
@@ -37,7 +39,7 @@ class ConfigManager:
         },
     }
 
-    def __init__(self, config_path: str | Path | None = None):
+    def __init__(self, config_path: Path | None = None):
         """Initialize configuration manager.
 
         Args:
@@ -55,7 +57,7 @@ class ConfigManager:
         self.load_from_environment()
         self._setup_logging()
 
-    def load_from_file(self, config_path: str | Path):
+    def load_from_file(self, config_path: Path):
         """Load configuration from a YAML file.
 
         Args:
@@ -150,7 +152,7 @@ class ConfigManager:
         """
         return self.config.copy()
 
-    def save_to_file(self, config_path: str | Path | None = None):
+    def save_to_file(self, config_path: Path | None = None):
         """Save configuration to a YAML file.
 
         Args:

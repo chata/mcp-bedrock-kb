@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """AWS authentication manager for Bedrock Knowledge Base MCP server."""
 
 import logging

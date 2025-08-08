@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Bedrock Knowledge Base MCP Server Package."""
 
 __version__ = "1.0.0"
