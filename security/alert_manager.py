@@ -26,6 +26,8 @@ try:
     import aiohttp
     AIOHTTP_AVAILABLE = True
 except ImportError:
+    # Ensure attribute exists for tests that patch `security.alert_manager.aiohttp`
+    aiohttp = None  # type: ignore[assignment]
     AIOHTTP_AVAILABLE = False
 
 logger = logging.getLogger(__name__)

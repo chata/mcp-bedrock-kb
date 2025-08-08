@@ -302,7 +302,8 @@ def create_s3_metadata_dict(metadata: dict[str, Any]) -> dict[str, str]:
 
         key = "".join(c for c in key if c.isalnum() or c in "-_")
 
-        if isinstance(value, list | dict):
+        # Use tuple for broad compatibility across Python versions
+        if isinstance(value, (list, dict)):  # noqa: UP038
             value = json.dumps(value)
         else:
             value = str(value)
