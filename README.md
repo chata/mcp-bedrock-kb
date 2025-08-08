@@ -16,6 +16,12 @@ An MCP (Model Context Protocol) server for Amazon Bedrock Knowledge Base with fu
 - **List Documents**: Browse documents in S3
 - **Sync Data Sources**: Trigger ingestion jobs for data synchronization
 
+### Security Features
+- **PII Detection**: Automatic detection of Personally Identifiable Information
+- **PII Masking**: Optional masking of detected PII before storage
+- **Security Warnings**: Real-time alerts when PII is detected
+- **Audit Logging**: Comprehensive logging of security events
+
 ## Installation
 
 ### Prerequisites
@@ -41,6 +47,7 @@ git clone https://github.com/chata/mcp-bedrock-kb.git
 cd mcp-bedrock-kb
 
 # Install dependencies (Python 3.10+ required)
+# 🔒 Note: spaCy language model is automatically installed
 python3.13 -m pip install -e .
 # or with your preferred Python version
 pip install -e .
@@ -153,6 +160,12 @@ export LOG_LEVEL=INFO                            # Logging level (DEBUG, INFO, W
 export LOG_FILE=/path/to/logfile.log             # Log to file instead of console
 ```
 
+#### Security Configuration Variables
+
+```bash
+export BEDROCK_KB_MASK_PII=true                 # Enable/disable PII masking (default: true)
+```
+
 #### Variable Priority
 
 The configuration system uses the following priority order (highest to lowest):
@@ -162,6 +175,71 @@ The configuration system uses the following priority order (highest to lowest):
 3. **Default values** (built-in defaults)
 
 For AWS regions specifically: `AWS_REGION` > `AWS_DEFAULT_REGION` > default (`us-east-1`)
+
+## Security Features
+
+### PII Detection and Masking
+
+This MCP server includes built-in PII (Personally Identifiable Information) detection and masking capabilities using Microsoft Presidio.
+
+#### Environment Variables
+
+- `BEDROCK_KB_MASK_PII`: Controls PII masking behavior (default: `true`)
+  - `true`: Detect PII and mask it before storage
+  - `false`: Detect PII and log warnings but don't mask content
+
+#### Detected PII Types
+- Email addresses → `[EMAIL_REDACTED]`
+- Phone numbers → `[PHONE_REDACTED]`
+- Credit card numbers → `[CREDIT_CARD_REDACTED]`
+- Social Security Numbers → `[SSN_REDACTED]`
+- Person names → `[NAME_REDACTED]`
+- US Passport numbers → `[PASSPORT_REDACTED]`
+- IP addresses → `[IP_REDACTED]`
+
+#### Security Warnings
+When PII is detected, the MCP responses include `security_warnings` fields:
+```json
+{
+  "success": true,
+  "security_warnings": [
+    "Document content: ⚠️ PII detected and masked: EMAIL_ADDRESS: 1",
+    "Metadata field 'contact': ⚠️ PII detected and masked: PHONE_NUMBER: 1"
+  ]
+}
+```
+
+#### Dependencies and Licenses
+
+All security-related dependencies use permissive licenses:
+
+- **Microsoft Presidio**: MIT License
+  - `presidio-analyzer>=2.2.0` - PII detection engine
+  - `presidio-anonymizer>=2.2.0` - PII masking engine
+- **spaCy**: MIT License - NLP processing for Presidio
+
+#### Security-First Design
+- **Non-blocking**: Operations never fail due to PII detection
+- **Observation-first**: Logs and warns about PII without disrupting workflows
+- **Configurable**: Environment variable control for different security requirements
+
+#### Usage Examples
+
+**With Masking Enabled (Default)**
+```bash
+export BEDROCK_KB_MASK_PII=true
+```
+- Detected PII is replaced with placeholders
+- Original content is masked in storage
+- Warnings indicate "masked"
+
+**With Detection Only**
+```bash
+export BEDROCK_KB_MASK_PII=false
+```
+- Detected PII is logged but not masked
+- Original content is preserved
+- Warnings indicate "logged"
 
 ## Required IAM Permissions
 

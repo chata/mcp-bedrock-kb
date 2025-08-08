@@ -47,6 +47,35 @@ document_processing:
   # Text encoding for text files
   encoding: "utf-8"
 
+# Security Configuration
+security:
+  # PII Detection and Masking
+  # Control PII masking with environment variable: BEDROCK_KB_MASK_PII=true/false
+  # When enabled, all detected PII will be fully masked with placeholders
+  pii:
+    enabled: true  # Base setting, overridden by BEDROCK_KB_MASK_PII env var
+    
+    # PII detection entities (using Microsoft Presidio)
+    entities:
+      - EMAIL_ADDRESS
+      - PHONE_NUMBER
+      - CREDIT_CARD
+      - US_SSN
+      - PERSON
+      - US_PASSPORT
+      - IP_ADDRESS
+    
+    # Full masking replacements (when BEDROCK_KB_MASK_PII=true)
+    replacements:
+      EMAIL_ADDRESS: "[EMAIL_REDACTED]"
+      PHONE_NUMBER: "[PHONE_REDACTED]"
+      CREDIT_CARD: "[CREDIT_CARD_REDACTED]"
+      US_SSN: "[SSN_REDACTED]"
+      PERSON: "[NAME_REDACTED]"
+      US_PASSPORT: "[PASSPORT_REDACTED]"
+      IP_ADDRESS: "[IP_REDACTED]"
+      DEFAULT: "[PII_REDACTED]"
+
 # Logging Configuration
 logging:
   # Log level: DEBUG, INFO, WARNING, ERROR, CRITICAL
@@ -57,6 +86,9 @@ logging:
   
   # Log file path (null for console output only)
   file: null
+  
+  # Security log directory (for PII detection logs)
+  security_log_dir: "~/.local/share/bedrock-kb-mcp/logs"
 
 # MCP Server Configuration
 mcp:

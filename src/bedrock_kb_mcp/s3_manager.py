@@ -1,38 +1,106 @@
+from __future__ import annotations
+
 """S3 manager for document operations in Knowledge Base."""
 
 import logging
 from pathlib import Path
 from typing import Any
 
-import boto3
 from botocore.exceptions import ClientError
+
+from .concurrency import DocumentProcessor
+from .interfaces import (
+    AlertManagerInterface,
+    AuthManagerInterface,
+    BaseS3Manager,
+    ConfigManagerInterface,
+    ConnectionPoolInterface,
+    PIIDetectorInterface,
+)
+
+# Import PII detector (with fallback)
+try:
+    import os
+    import sys
+
+    sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
+    from security.pii_detector import pii_detector as default_pii_detector
+
+    PII_DETECTOR_AVAILABLE = True
+except ImportError:
+    default_pii_detector = None
+    PII_DETECTOR_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
 
-class S3Manager:
+class S3Manager(BaseS3Manager):
     """Manager for S3 operations related to Knowledge Base documents."""
 
-    def __init__(self, session: boto3.Session, config: Any):
+    def __init__(
+        self,
+        auth_manager: AuthManagerInterface,
+        config_manager: ConfigManagerInterface,
+        pii_detector: PIIDetectorInterface | None = None,
+        alert_manager: AlertManagerInterface | None = None,
+        connection_pool: ConnectionPoolInterface | None = None,
+    ):
         """Initialize S3 manager.
 
         Args:
-            session: AWS boto3 session
-            config: Configuration manager instance
+            auth_manager: Authentication manager
+            config_manager: Configuration manager
+            pii_detector: Optional PII detector
+            alert_manager: Optional alert manager
+            connection_pool: Optional connection pool
         """
-        self.config = config
-        self.s3_client = session.client("s3", region_name=config.get("aws.region", "us-east-1"))
-        self.bedrock_agent = session.client(
-            "bedrock-agent", region_name=config.get("aws.region", "us-east-1")
-        )
+        super().__init__(auth_manager, config_manager, pii_detector, alert_manager, connection_pool)
 
-        self.default_bucket = config.get("s3.default_bucket")
-        self.upload_prefix = config.get("s3.upload_prefix", "documents/")
-        self.max_file_size_mb = config.get("document_processing.max_file_size_mb", 50)
-        self.supported_formats = config.get(
+        # Initialize document processor for concurrent operations
+        max_concurrent = config_manager.get("s3.max_concurrent_uploads", 5)
+        self.document_processor = DocumentProcessor(max_concurrent=max_concurrent)
+
+        # Configuration
+        self.default_bucket = config_manager.get("s3.default_bucket")
+        self.upload_prefix = config_manager.get("s3.upload_prefix", "documents/")
+        self.max_file_size_mb = config_manager.get("document_processing.max_file_size_mb", 50)
+        self.supported_formats = config_manager.get(
             "document_processing.supported_formats", ["txt", "md", "html", "pdf", "docx"]
         )
-        self.encoding = config.get("document_processing.encoding", "utf-8")
+        self.encoding = config_manager.get("document_processing.encoding", "utf-8")
+
+        # Clients (will be initialized lazily)
+        self._s3_client = None
+        self._bedrock_agent = None
+
+    async def _get_s3_client(self):
+        """Get S3 client (with connection pooling if available)."""
+        if self.connection_pool:
+            return await self.connection_pool.get_connection("s3")
+
+        if not self._s3_client:
+            session = await self.auth_manager.get_session()
+            region = self.config_manager.get_aws_region()
+            self._s3_client = session.client("s3", region_name=region)
+
+        return self._s3_client
+
+    async def _get_bedrock_agent(self):
+        """Get Bedrock agent client (with connection pooling if available)."""
+        if self.connection_pool:
+            return await self.connection_pool.get_connection("bedrock-agent")
+
+        if not self._bedrock_agent:
+            session = await self.auth_manager.get_session()
+            region = self.config_manager.get_aws_region()
+            self._bedrock_agent = session.client("bedrock-agent", region_name=region)
+
+        return self._bedrock_agent
+
+    async def _return_connection(self, service_name: str, client):
+        """Return connection to pool if using connection pooling."""
+        if self.connection_pool:
+            await self.connection_pool.return_connection(service_name, client)
 
     async def get_bucket_for_kb(self, knowledge_base_id: str) -> str | None:
         """Get the S3 bucket associated with a Knowledge Base.
@@ -44,7 +112,8 @@ class S3Manager:
             S3 bucket name or None
         """
         try:
-            response = self.bedrock_agent.get_knowledge_base(knowledgeBaseId=knowledge_base_id)
+            bedrock_agent = await self._get_bedrock_agent()
+            response = bedrock_agent.get_knowledge_base(knowledgeBaseId=knowledge_base_id)
 
             storage_config = response.get("knowledgeBase", {}).get("storageConfiguration", {})
             s3_config = (
@@ -53,10 +122,10 @@ class S3Manager:
                 or storage_config.get("rdsConfiguration", {})
             )
 
-            data_sources = self.bedrock_agent.list_data_sources(knowledgeBaseId=knowledge_base_id)
+            data_sources = bedrock_agent.list_data_sources(knowledgeBaseId=knowledge_base_id)
 
             for ds in data_sources.get("dataSourceSummaries", []):
-                ds_detail = self.bedrock_agent.get_data_source(
+                ds_detail = bedrock_agent.get_data_source(
                     knowledgeBaseId=knowledge_base_id, dataSourceId=ds["dataSourceId"]
                 )
                 s3_config = (
@@ -74,6 +143,9 @@ class S3Manager:
         except ClientError as e:
             logger.error(f"Error getting bucket for Knowledge Base: {e}")
             return self.default_bucket
+        finally:
+            if "bedrock_agent" in locals():
+                await self._return_connection("bedrock-agent", bedrock_agent)
 
     async def upload_document(
         self,
@@ -81,7 +153,7 @@ class S3Manager:
         document_content: str,
         document_name: str,
         document_format: str = "txt",
-        metadata: dict[str, Any] | None = None,
+        metadata: dict[str, Any | None] = None,
         folder_path: str | None = None,
     ) -> dict[str, Any]:
         """Upload a text document to S3 for Knowledge Base.
@@ -131,19 +203,58 @@ class S3Manager:
                 "ContentType": content_type,
             }
 
-            if metadata:
-                put_params["Metadata"] = {k: str(v) for k, v in metadata.items()}
+            # PII detection and metadata processing
+            warnings = []
+            processed_metadata = metadata
 
-            self.s3_client.put_object(**put_params)
+            if metadata and self.pii_detector:
+                (
+                    processed_metadata,
+                    metadata_warnings,
+                ) = await self.pii_detector.process_metadata_safely(metadata)
+                warnings.extend(metadata_warnings)
 
-            return {
+            # PII detection in document content
+            if self.pii_detector:
+                masked_content, content_findings = await self.pii_detector.mask_pii(
+                    document_content
+                )
+                if content_findings:
+                    content_warning = self.pii_detector.get_pii_warning(content_findings)
+                    warnings.append(f"Document content: {content_warning}")
+
+                    # Log PII detection
+                    await self.pii_detector.log_pii_detection(
+                        document_content,
+                        content_findings,
+                        f"upload_document({knowledge_base_id}/{document_name})",
+                    )
+
+                    # Use masked content if masking is enabled
+                    if self.pii_detector.masking_enabled:
+                        document_content = masked_content
+
+            if processed_metadata:
+                put_params["Metadata"] = {k: str(v) for k, v in processed_metadata.items()}
+
+            s3_client = await self._get_s3_client()
+            s3_client.put_object(**put_params)
+            await self._return_connection("s3", s3_client)
+
+            result = {
                 "success": True,
                 "bucket": bucket,
                 "key": s3_key,
                 "size": len(document_content.encode(self.encoding)),
-                "metadata": metadata,
+                "metadata": processed_metadata,
                 "message": f"Document uploaded successfully to s3://{bucket}/{s3_key}",
             }
+
+            # Add security warnings
+            if warnings:
+                result["security_warnings"] = warnings
+
+            return result
 
         except ClientError as e:
             logger.error(f"Error uploading document: {e}")
@@ -156,7 +267,7 @@ class S3Manager:
         file_name: str,
         content_type: str,
         s3_key: str | None = None,
-        metadata: dict[str, Any] | None = None,
+        metadata: dict[str, Any | None] = None,
     ) -> dict[str, Any]:
         """Upload a file to S3 for Knowledge Base.
 
@@ -210,20 +321,39 @@ class S3Manager:
                 "ContentType": content_type,
             }
 
-            if metadata:
-                put_params["Metadata"] = {k: str(v) for k, v in metadata.items()}
+            # PII detection and metadata processing
+            warnings = []
+            processed_metadata = metadata
 
-            self.s3_client.put_object(**put_params)
+            if metadata and self.pii_detector:
+                (
+                    processed_metadata,
+                    metadata_warnings,
+                ) = await self.pii_detector.process_metadata_safely(metadata)
+                warnings.extend(metadata_warnings)
 
-            return {
+            if processed_metadata:
+                put_params["Metadata"] = {k: str(v) for k, v in processed_metadata.items()}
+
+            s3_client = await self._get_s3_client()
+            s3_client.put_object(**put_params)
+            await self._return_connection("s3", s3_client)
+
+            result = {
                 "success": True,
                 "bucket": bucket,
                 "key": s3_key,
                 "size_mb": file_size_mb,
                 "content_type": content_type,
-                "metadata": metadata,
+                "metadata": processed_metadata,
                 "message": f"File uploaded successfully to s3://{bucket}/{s3_key}",
             }
+
+            # Add security warnings
+            if warnings:
+                result["security_warnings"] = warnings
+
+            return result
 
         except ClientError as e:
             logger.error(f"Error uploading file: {e}")
@@ -234,7 +364,7 @@ class S3Manager:
         knowledge_base_id: str,
         document_s3_key: str,
         new_content: str,
-        metadata: dict[str, Any] | None = None,
+        metadata: dict[str, Any | None] = None,
     ) -> dict[str, Any]:
         """Update an existing document in S3.
 
@@ -255,10 +385,12 @@ class S3Manager:
                     "error": "Could not determine S3 bucket for Knowledge Base",
                 }
 
+            s3_client = await self._get_s3_client()
             try:
-                existing = self.s3_client.head_object(Bucket=bucket, Key=document_s3_key)
+                existing = s3_client.head_object(Bucket=bucket, Key=document_s3_key)
                 existing_metadata = existing.get("Metadata", {})
             except ClientError as e:
+                await self._return_connection("s3", s3_client)
                 if e.response["Error"]["Code"] == "404":
                     return {
                         "success": False,
@@ -285,12 +417,42 @@ class S3Manager:
                 "ContentType": content_type,
             }
 
+            # PII detection and metadata processing
+            warnings = []
+
+            if metadata and self.pii_detector:
+                (
+                    processed_new_metadata,
+                    metadata_warnings,
+                ) = await self.pii_detector.process_metadata_safely(metadata)
+                existing_metadata.update(processed_new_metadata)
+                warnings.extend(metadata_warnings)
+
+            # PII detection in document content
+            if self.pii_detector:
+                masked_content, content_findings = await self.pii_detector.mask_pii(new_content)
+                if content_findings:
+                    content_warning = self.pii_detector.get_pii_warning(content_findings)
+                    warnings.append(f"Document content: {content_warning}")
+
+                    # Log PII detection
+                    await self.pii_detector.log_pii_detection(
+                        new_content,
+                        content_findings,
+                        f"update_document({knowledge_base_id}/{document_s3_key})",
+                    )
+
+                    # Use masked content if masking is enabled
+                    if self.pii_detector.masking_enabled:
+                        new_content = masked_content
+
             if existing_metadata:
                 put_params["Metadata"] = {k: str(v) for k, v in existing_metadata.items()}
 
-            self.s3_client.put_object(**put_params)
+            s3_client.put_object(**put_params)
+            await self._return_connection("s3", s3_client)
 
-            return {
+            result = {
                 "success": True,
                 "bucket": bucket,
                 "key": document_s3_key,
@@ -298,6 +460,12 @@ class S3Manager:
                 "metadata": existing_metadata,
                 "message": f"Document updated successfully: s3://{bucket}/{document_s3_key}",
             }
+
+            # Add security warnings
+            if warnings:
+                result["security_warnings"] = warnings
+
+            return result
 
         except ClientError as e:
             logger.error(f"Error updating document: {e}")
@@ -321,9 +489,11 @@ class S3Manager:
                     "error": "Could not determine S3 bucket for Knowledge Base",
                 }
 
+            s3_client = await self._get_s3_client()
             try:
-                self.s3_client.head_object(Bucket=bucket, Key=document_s3_key)
+                s3_client.head_object(Bucket=bucket, Key=document_s3_key)
             except ClientError as e:
+                await self._return_connection("s3", s3_client)
                 if e.response["Error"]["Code"] == "404":
                     return {
                         "success": False,
@@ -331,7 +501,8 @@ class S3Manager:
                     }
                 raise
 
-            self.s3_client.delete_object(Bucket=bucket, Key=document_s3_key)
+            s3_client.delete_object(Bucket=bucket, Key=document_s3_key)
+            await self._return_connection("s3", s3_client)
 
             return {
                 "success": True,
@@ -367,12 +538,13 @@ class S3Manager:
             if prefix:
                 list_params["Prefix"] = prefix
 
-            response = self.s3_client.list_objects_v2(**list_params)
+            s3_client = await self._get_s3_client()
+            response = s3_client.list_objects_v2(**list_params)
 
             documents = []
             for obj in response.get("Contents", []):
                 try:
-                    head_response = self.s3_client.head_object(Bucket=bucket, Key=obj["Key"])
+                    head_response = s3_client.head_object(Bucket=bucket, Key=obj["Key"])
                     metadata = head_response.get("Metadata", {})
                 except Exception:
                     metadata = {}
@@ -389,8 +561,11 @@ class S3Manager:
                     }
                 )
 
+            await self._return_connection("s3", s3_client)
             return documents
 
         except ClientError as e:
+            if "s3_client" in locals():
+                await self._return_connection("s3", s3_client)
             logger.error(f"Error listing documents: {e}")
             return []

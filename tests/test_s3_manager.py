@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Tests for S3Manager."""
 
 from unittest.mock import AsyncMock, MagicMock
@@ -45,15 +47,14 @@ class TestS3Manager:
     @pytest.mark.asyncio
     async def test_get_bucket_for_kb(self, s3_manager):
         """Test getting S3 bucket for Knowledge Base."""
-        s3_manager.bedrock_agent.get_knowledge_base = MagicMock(
+        mock_bedrock = AsyncMock()
+        mock_bedrock.get_knowledge_base = MagicMock(
             return_value={"knowledgeBase": {"storageConfiguration": {}}}
         )
-
-        s3_manager.bedrock_agent.list_data_sources = MagicMock(
+        mock_bedrock.list_data_sources = MagicMock(
             return_value={"dataSourceSummaries": [{"dataSourceId": "DS123"}]}
         )
-
-        s3_manager.bedrock_agent.get_data_source = MagicMock(
+        mock_bedrock.get_data_source = MagicMock(
             return_value={
                 "dataSource": {
                     "dataSourceConfiguration": {
@@ -63,17 +64,23 @@ class TestS3Manager:
             }
         )
 
+        # Mock the bedrock client method
+        s3_manager._get_bedrock_agent = AsyncMock(return_value=mock_bedrock)
+
         bucket = await s3_manager.get_bucket_for_kb("KB123")
         assert bucket == "kb-bucket"
 
     @pytest.mark.asyncio
     async def test_get_bucket_for_kb_default(self, s3_manager):
         """Test getting default bucket when KB bucket not found."""
-        s3_manager.bedrock_agent.get_knowledge_base = MagicMock(
+        mock_bedrock = AsyncMock()
+        mock_bedrock.get_knowledge_base = MagicMock(
             side_effect=ClientError(
                 {"Error": {"Code": "ResourceNotFoundException"}}, "get_knowledge_base"
             )
         )
+
+        s3_manager._get_bedrock_agent = AsyncMock(return_value=mock_bedrock)
 
         bucket = await s3_manager.get_bucket_for_kb("KB123")
         assert bucket == "test-bucket"
@@ -82,7 +89,11 @@ class TestS3Manager:
     async def test_upload_document_success(self, s3_manager):
         """Test successful document upload."""
         s3_manager.get_bucket_for_kb = AsyncMock(return_value="test-bucket")
-        s3_manager.s3_client.put_object = MagicMock()
+
+        # Mock S3 client
+        mock_s3_client = AsyncMock()
+        mock_s3_client.put_object = MagicMock()
+        s3_manager._get_s3_client = AsyncMock(return_value=mock_s3_client)
 
         result = await s3_manager.upload_document(
             knowledge_base_id="KB123",
@@ -97,7 +108,9 @@ class TestS3Manager:
         assert result["key"] == "documents/test.txt"
         assert result["metadata"] == {"author": "test"}
 
-        s3_manager.s3_client.put_object.assert_called_once()
+        # Verify that _get_s3_client was called and put_object was called
+        s3_manager._get_s3_client.assert_called_once()
+        mock_s3_client.put_object.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_upload_document_invalid_format(self, s3_manager):
@@ -124,7 +137,11 @@ class TestS3Manager:
         file_content_b64 = base64.b64encode(test_content.encode()).decode()
 
         s3_manager.get_bucket_for_kb = AsyncMock(return_value="test-bucket")
-        s3_manager.s3_client.put_object = MagicMock()
+
+        # Mock S3 client
+        mock_s3_client = AsyncMock()
+        mock_s3_client.put_object = MagicMock()
+        s3_manager._get_s3_client = AsyncMock(return_value=mock_s3_client)
 
         result = await s3_manager.upload_file(
             knowledge_base_id="KB123",
@@ -141,8 +158,8 @@ class TestS3Manager:
         assert "message" in result
 
         # Verify S3 put_object was called with decoded content
-        s3_manager.s3_client.put_object.assert_called_once()
-        call_args = s3_manager.s3_client.put_object.call_args[1]
+        mock_s3_client.put_object.assert_called_once()
+        call_args = mock_s3_client.put_object.call_args[1]
         assert call_args["Body"] == test_content.encode()
 
     @pytest.mark.asyncio
@@ -205,10 +222,14 @@ class TestS3Manager:
     async def test_update_document_success(self, s3_manager):
         """Test successful document update."""
         s3_manager.get_bucket_for_kb = AsyncMock(return_value="test-bucket")
-        s3_manager.s3_client.head_object = MagicMock(
+
+        # Mock S3 client
+        mock_s3_client = AsyncMock()
+        mock_s3_client.head_object = MagicMock(
             return_value={"Metadata": {"existing": "metadata"}, "ContentType": "text/plain"}
         )
-        s3_manager.s3_client.put_object = MagicMock()
+        mock_s3_client.put_object = MagicMock()
+        s3_manager._get_s3_client = AsyncMock(return_value=mock_s3_client)
 
         result = await s3_manager.update_document(
             knowledge_base_id="KB123",
@@ -226,9 +247,13 @@ class TestS3Manager:
     async def test_update_document_not_found(self, s3_manager):
         """Test updating nonexistent document."""
         s3_manager.get_bucket_for_kb = AsyncMock(return_value="test-bucket")
-        s3_manager.s3_client.head_object = MagicMock(
+
+        # Mock S3 client
+        mock_s3_client = AsyncMock()
+        mock_s3_client.head_object = MagicMock(
             side_effect=ClientError({"Error": {"Code": "404"}}, "head_object")
         )
+        s3_manager._get_s3_client = AsyncMock(return_value=mock_s3_client)
 
         result = await s3_manager.update_document(
             knowledge_base_id="KB123",
@@ -243,8 +268,12 @@ class TestS3Manager:
     async def test_delete_document_success(self, s3_manager):
         """Test successful document deletion."""
         s3_manager.get_bucket_for_kb = AsyncMock(return_value="test-bucket")
-        s3_manager.s3_client.head_object = MagicMock()
-        s3_manager.s3_client.delete_object = MagicMock()
+
+        # Mock S3 client
+        mock_s3_client = AsyncMock()
+        mock_s3_client.head_object = MagicMock()
+        mock_s3_client.delete_object = MagicMock()
+        s3_manager._get_s3_client = AsyncMock(return_value=mock_s3_client)
 
         result = await s3_manager.delete_document(
             knowledge_base_id="KB123", document_s3_key="documents/test.txt"
@@ -252,13 +281,16 @@ class TestS3Manager:
 
         assert result["success"] is True
         assert result["key"] == "documents/test.txt"
-        s3_manager.s3_client.delete_object.assert_called_once()
+        mock_s3_client.delete_object.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_list_documents(self, s3_manager):
         """Test listing documents in S3."""
         s3_manager.get_bucket_for_kb = AsyncMock(return_value="test-bucket")
-        s3_manager.s3_client.list_objects_v2 = MagicMock(
+
+        # Mock S3 client
+        mock_s3_client = AsyncMock()
+        mock_s3_client.list_objects_v2 = MagicMock(
             return_value={
                 "Contents": [
                     {
@@ -276,7 +308,8 @@ class TestS3Manager:
                 ]
             }
         )
-        s3_manager.s3_client.head_object = MagicMock(return_value={"Metadata": {}})
+        mock_s3_client.head_object = MagicMock(return_value={"Metadata": {}})
+        s3_manager._get_s3_client = AsyncMock(return_value=mock_s3_client)
 
         result = await s3_manager.list_documents(
             knowledge_base_id="KB123", prefix="documents/", max_items=10

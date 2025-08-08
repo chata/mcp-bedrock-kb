@@ -1,7 +1,7 @@
 [project]
 name = "bedrock-kb-mcp"
 version = "1.0.0"
-description = "MCP server for Amazon Bedrock Knowledge Base with CRUD operations"
+description = "MCP server for Amazon Bedrock Knowledge Base with CRUD operations and PII security features"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "Bedrock KB MCP Development Team" }]
@@ -12,6 +12,11 @@ dependencies = [
     "pyyaml>=6.0.1",
     "aiofiles>=24.1.0",
     "python-magic>=0.4.27",
+    # PII Detection and Security
+    "presidio-analyzer>=2.2.0",  # MIT License - PII detection
+    "presidio-anonymizer>=2.2.0",  # MIT License - PII masking
+    "spacy>=3.4.0",  # MIT License - NLP processing for Presidio
+    "psutil>=5.9.0",  # BSD License - Memory monitoring for PII processing
 ]
 
 [project.optional-dependencies]
@@ -53,6 +58,7 @@ select = [
 ]
 ignore = [
     "E501",  # line too long, handled by black
+    "E402",  # module level import not at top of file (conflicts with __future__ import pattern)
     "B008",  # do not perform function calls in argument defaults
     "C901",  # too complex
     "B904",  # exception chaining
@@ -82,3 +88,9 @@ asyncio_mode = "auto"
 line-length = 100
 target-version = ["py311"]
 include = '\.pyi?$'
+
+[dependency-groups]
+dev = [
+    "build>=1.3.0",
+    "twine>=6.1.0",
+]

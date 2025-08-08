@@ -149,3 +149,10 @@ aws-credentials.json
 # Local config files with sensitive data
 config-local.yaml
 .env.local
+
+# Development tools and temporary files
+.claude/
+.serena/
+bandit-report.json
+safety-report.json
+uv.lock

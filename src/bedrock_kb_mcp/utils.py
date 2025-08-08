@@ -1,4 +1,17 @@
-"""Utility functions for Bedrock Knowledge Base MCP server."""
+from __future__ import annotations
+
+"""
+Utility functions for Bedrock Knowledge Base MCP server.
+
+Bedrock KB MCP - Metadata Security Module
+
+This module uses Microsoft Presidio for PII detection.
+Presidio is licensed under MIT License.
+Copyright (c) Microsoft Corporation. All rights reserved.
+
+MIT License Terms:
+https://github.com/microsoft/presidio/blob/main/LICENSE
+"""
 
 import hashlib
 import json
@@ -226,7 +239,7 @@ def validate_json(data: str | dict) -> tuple[bool, dict | None, str | None]:
         return False, None, str(e)
 
 
-def merge_metadata(*metadata_dicts: dict[str, Any] | None) -> dict[str, Any]:
+def merge_metadata(*metadata_dicts: dict[str, Any | None]) -> dict[str, Any]:
     """Merge multiple metadata dictionaries.
 
     Args:
